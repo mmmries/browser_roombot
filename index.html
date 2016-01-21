@@ -7,10 +7,11 @@
     </script>
     <script type="text/javascript" src="socket.js"></script>
     <script type="text/javascript">
-      //change the IP address here to point to a roombot
-      socket = new exports.Socket("ws://192.168.0.3/socket");
+      var roombot_host = "roombots.riesd.com" // change this to point to the roombot
+      var channel = "roomba" // change this if you are using the simulator
+      socket = new exports.Socket("ws://"+roombot_host+"/socket");
       socket.connect();
-      channel = socket.channel("roomba", {});
+      channel = socket.channel(channel, {});
       promise = channel.join();
       promise.receive("ok", function(response){ console.log("joined!", response); });
       promise.receive("error", function(response){ console.log("failed to join :'(", response); });
