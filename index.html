@@ -7,26 +7,97 @@
     </script>
     <script type="text/javascript" src="socket.js"></script>
     <script type="text/javascript">
-      var roombot_host = "roombots.riesd.com" // change this to point to the roombot
-      var channel = "roomba" // change this if you are using the simulator
+      var roombot_host = "192.168.0.102" // change this to point to the roombot
+      var channel_name = "roomba" // change this if you are using the simulator
       socket = new exports.Socket("ws://"+roombot_host+"/socket");
       socket.connect();
-      channel = socket.channel(channel, {});
+      channel = socket.channel(channel_name, {});
       promise = channel.join();
       promise.receive("ok", function(response){ console.log("joined!", response); });
       promise.receive("error", function(response){ console.log("failed to join :'(", response); });
 
+      
+
       channel.on("sensor_update", function(sensors){
-        console.log("got some new sensor information", sensors);
-        // now you can use the sensor data by accessing sensors.bumper_right or any of the other sensors
-        // documentation about the sensors and their values can be found at http://roombots.riesd.com/
+        current_sensors = sensors;
+      });
+      channel.on("position_update", function(position){
+        current_position = position;
+        document.getElementsByClassName("position_x")[0].textContent = position.x.toFixed(1)
+        document.getElementsByClassName("position_y")[0].textContent = position.y.toFixed(1)
+        document.getElementsByClassName("position_heading")[0].textContent = position.heading.toFixed(1)
       });
 
       // You can send drive commands by doing something like:
-      channel.push("drive", {velocity: 400, radius: 300});
+      //channel.push("drive", {velocity: 400, radius: 300});
+      waypoints = [
+        {x: 500.0, y: 500.0},
+        {x:1000.0, y: 500.0},
+        {x:1000.0, y:-500.0},
+        {x:   0.0, y:   0.0}
+      ];
+      state = "init";
+      desired_heading = 0.0;
+      current_position = {x: 0.0, y: 0.0, heading: 0.0};
+      current_sensors = {};
+      last_distance = Infinity;
+
+      function resetPosition(){
+        channel.push("position_reset");
+      }
+      function goToWaypoints(){
+        if(state == "init"){
+          var next_waypoint = waypoints[0];
+          if(next_waypoint == undefined){
+            // no place to go
+            return false;
+          }
+          console.log("start turning...")
+          desired_heading = getHeading(current_position.x, current_position.y, next_waypoint.x, next_waypoint.y);
+          channel.push("drive", {velocity: 50, radius: 1}); // TODO pick whichever direction requires less turning
+          state = "turning";
+        }else if(state == "turning"){
+          var dh = Math.abs(current_position.heading - desired_heading);
+          if(dh < 0.1){
+            console.log("start driving!")
+            state = "driving";
+            channel.push("drive", {velocity: 50, radius: 0});
+          }
+        }else if(state == "driving"){
+          var next_waypoint = waypoints[0];
+          var dx = current_position.x - next_waypoint.x;
+          var dy = current_position.y - next_waypoint.y;
+          var distance = Math.sqrt( dx**2 + dy**2 );
+          if(distance < 20.0 || last_distance < distance){
+            console.log("close enough, time to stop");
+            last_distance = Infinity;
+            state = "init";
+            waypoints.shift();
+            channel.push("drive", {velocity: 0, radius: 0});
+          } else {
+            last_distance = distance;
+          }
+        } else {
+          console.log("WAT? "+state);
+        }
+      }
+      function getHeading(x1,y1,x2,y2){
+        var dx = x2-x1;
+        var dy = y2-y1;
+        return Math.atan2(dy, dx);
+      }
+      resetPosition();
+      channel.push("safe", {});
+      setInterval(goToWaypoints, 33);
     </script>
   </head>
   <body>
     <h1>Roombot Driver</h1>
+    <button onClick="resetPosition()">Reset</button>
+    <div>
+      X: <span class="position_x"></span>mm<br/>
+      Y: <span class="position_y"></span>mm<br/>
+      Heading: <span class="position_heading"></span>rad<br/>
+    </div>
   </body>
 </html>
