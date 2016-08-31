@@ -7,7 +7,7 @@
     </script>
     <script type="text/javascript" src="socket.js"></script>
     <script type="text/javascript">
-      var roombot_host = "192.168.0.102" // change this to point to the roombot
+      var roombot_host = "192.168.0.104" // change this to point to the roombot
       var channel_name = "roomba" // change this if you are using the simulator
       socket = new exports.Socket("ws://"+roombot_host+"/socket");
       socket.connect();
@@ -15,8 +15,6 @@
       promise = channel.join();
       promise.receive("ok", function(response){ console.log("joined!", response); });
       promise.receive("error", function(response){ console.log("failed to join :'(", response); });
-
-      
 
       channel.on("sensor_update", function(sensors){
         current_sensors = sensors;
@@ -30,31 +28,27 @@
 
       // You can send drive commands by doing something like:
       //channel.push("drive", {velocity: 400, radius: 300});
-      waypoints = [
-        {x: 500.0, y: 500.0},
-        {x:1000.0, y: 500.0},
-        {x:1000.0, y:-500.0},
-        {x:   0.0, y:   0.0}
-      ];
+      waypoints = [];
       state = "init";
       desired_heading = 0.0;
       current_position = {x: 0.0, y: 0.0, heading: 0.0};
       current_sensors = {};
       last_distance = Infinity;
 
-      function resetPosition(){
-        channel.push("position_reset");
-      }
       function goToWaypoints(){
         if(state == "init"){
+          renderWaypoints(waypoints);
           var next_waypoint = waypoints[0];
           if(next_waypoint == undefined){
             // no place to go
             return false;
           }
           console.log("start turning...")
-          desired_heading = getHeading(current_position.x, current_position.y, next_waypoint.x, next_waypoint.y);
-          channel.push("drive", {velocity: 50, radius: 1}); // TODO pick whichever direction requires less turning
+          var dx = next_waypoint.x - current_position.x;
+          var dy = next_waypoint.y - current_position.y;
+          desired_heading = getHeading(dx, dy);
+          var radius = turnDirection(current_position.heading, desired_heading);
+          channel.push("drive", {velocity: 50, radius: radius}); // TODO pick whichever direction requires less turning
           state = "turning";
         }else if(state == "turning"){
           var dh = Math.abs(current_position.heading - desired_heading);
@@ -65,39 +59,77 @@
           }
         }else if(state == "driving"){
           var next_waypoint = waypoints[0];
-          var dx = current_position.x - next_waypoint.x;
-          var dy = current_position.y - next_waypoint.y;
+          var dx = next_waypoint.x - current_position.x;
+          var dy = next_waypoint.y - current_position.y;
           var distance = Math.sqrt( dx**2 + dy**2 );
-          if(distance < 20.0 || last_distance < distance){
+          if(distance < 10.0 || (last_distance < distance && distance < 100.0)){
             console.log("close enough, time to stop");
             last_distance = Infinity;
             state = "init";
             waypoints.shift();
             channel.push("drive", {velocity: 0, radius: 0});
           } else {
+            desired_heading = getHeading(dx, dy);
+            var radius = 400 * turnDirection(current_position.heading, desired_heading);
+            channel.push("drive", {velocity: 50, radius: radius});
             last_distance = distance;
           }
         } else {
           console.log("WAT? "+state);
         }
       }
-      function getHeading(x1,y1,x2,y2){
-        var dx = x2-x1;
-        var dy = y2-y1;
+      function getHeading(dx, dy){
         return Math.atan2(dy, dx);
       }
-      resetPosition();
-      channel.push("safe", {});
+      function turnDirection(current_heading, desired_heading) {
+        var dh = desired_heading - current_heading;
+        if( dh > Math.PI ) {
+          dh = -((Math.PI * 2) - dh);
+        } else if (dh < -Math.PI) {
+          dh = (Math.PI * 2) + dh;
+        }
+        return dh > 0.0 ? 1 : -1;
+      }
+      function renderWaypoints(waypoints){
+        var el = document.getElementById("waypoint_list");
+        el.innerHTML = "";
+        var html = "";
+        waypoints.forEach(function(waypoint){
+          html += "<li>"+waypoint.x.toFixed(1)+","+waypoint.y.toFixed(1)+"</li>";
+        });
+        el.innerHTML = html;
+      }
+      function followPath(){
+        resetPosition();
+        channel.push("safe", {});
+        // center of one tile to center of the next tile is 461.9625mm
+        var tile = 461.9625;
+        waypoints = [
+          {x: 2*tile, y: 0.0},
+          {x: 3*tile, y: 2*tile},
+          {x: 0.0, y: 2*tile},
+          {x: -4*tile, y: 4*tile},
+          {x: -4*tile, y: -2*tile},
+          {x:   0.0, y:   0.0}
+        ];
+      }
+      function resetPosition(){
+        channel.push("position_reset");
+      }
       setInterval(goToWaypoints, 33);
     </script>
   </head>
   <body>
     <h1>Roombot Driver</h1>
     <button onClick="resetPosition()">Reset</button>
+    <button onClick="followPath()">Follow the Path</button>
     <div>
       X: <span class="position_x"></span>mm<br/>
       Y: <span class="position_y"></span>mm<br/>
       Heading: <span class="position_heading"></span>rad<br/>
     </div>
+    <h2>Waypoints</h2>
+    <ul id="waypoint_list">
+    </ul>
   </body>
 </html>
