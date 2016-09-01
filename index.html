@@ -62,16 +62,17 @@
           var dx = next_waypoint.x - current_position.x;
           var dy = next_waypoint.y - current_position.y;
           var distance = Math.sqrt( dx**2 + dy**2 );
-          if(distance < 10.0 || (last_distance < distance && distance < 100.0)){
-            console.log("close enough, time to stop");
+          if(distance < 5.0 || (last_distance < distance && distance < 50.0)){
+            console.log("close enough ("+distance+"mm), time to stop");
             last_distance = Infinity;
             state = "init";
             waypoints.shift();
             channel.push("drive", {velocity: 0, radius: 0});
           } else {
             desired_heading = getHeading(dx, dy);
-            var radius = 400 * turnDirection(current_position.heading, desired_heading);
-            channel.push("drive", {velocity: 50, radius: radius});
+            var radius = 600 * turnDirection(current_position.heading, desired_heading);
+            var speed = getSpeed(distance);
+            channel.push("drive", {velocity: speed, radius: radius});
             last_distance = distance;
           }
         } else {
@@ -80,6 +81,15 @@
       }
       function getHeading(dx, dy){
         return Math.atan2(dy, dx);
+      }
+      function getSpeed(distance){
+        if(distance > 200.0) {
+          return 200;
+        } else if(distance < 50.0) {
+          return 50;
+        } else {
+          return Math.round(distance);
+        }
       }
       function turnDirection(current_heading, desired_heading) {
         var dh = desired_heading - current_heading;
