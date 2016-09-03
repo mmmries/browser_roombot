@@ -7,7 +7,7 @@
     </script>
     <script type="text/javascript" src="socket.js"></script>
     <script type="text/javascript">
-      var roombot_host = "192.168.0.104" // change this to point to the roombot
+      var roombot_host = "192.168.0.105" // change this to point to the roombot
       var channel_name = "roomba" // change this if you are using the simulator
       socket = new exports.Socket("ws://"+roombot_host+"/socket");
       socket.connect();
@@ -70,7 +70,8 @@
             channel.push("drive", {velocity: 0, radius: 0});
           } else {
             desired_heading = getHeading(dx, dy);
-            var radius = 600 * turnDirection(current_position.heading, desired_heading);
+            var dh = turnDiff(current_position.heading, desired_heading);
+            var radius = getRadiusForCorrection(dh);
             var speed = getSpeed(distance);
             channel.push("drive", {velocity: speed, radius: radius});
             last_distance = distance;
@@ -82,6 +83,16 @@
       function getHeading(dx, dy){
         return Math.atan2(dy, dx);
       }
+      function getRadiusForCorrection(dh) {
+        var radius = 100 * (1.0 / dh);
+        if(radius > 1999.9){
+          return 2000;
+        } else if (radius < -1999.9) {
+          return -2000;
+        } else {
+          return Math.round(radius);
+        }
+      }
       function getSpeed(distance){
         if(distance > 200.0) {
           return 200;
@@ -91,13 +102,17 @@
           return Math.round(distance);
         }
       }
-      function turnDirection(current_heading, desired_heading) {
+      function turnDiff(current_heading, desired_heading) {
         var dh = desired_heading - current_heading;
         if( dh > Math.PI ) {
           dh = -((Math.PI * 2) - dh);
         } else if (dh < -Math.PI) {
           dh = (Math.PI * 2) + dh;
         }
+        return dh;
+      }
+      function turnDirection(current_heading, desired_heading) {
+        var dh = turnDiff(current_heading, desired_heading);
         return dh > 0.0 ? 1 : -1;
       }
       function renderWaypoints(waypoints){
@@ -116,16 +131,15 @@
         var tile = 461.9625;
         waypoints = [
           {x: 2*tile, y: 0.0},
-          {x: 3*tile, y: 2*tile},
+          {x: 2*tile, y: 2*tile},
           {x: 0.0, y: 2*tile},
-          {x: -4*tile, y: 4*tile},
-          {x: -4*tile, y: -2*tile},
           {x:   0.0, y:   0.0}
         ];
       }
       function resetPosition(){
         channel.push("position_reset");
       }
+      channel.push("drive", {velocity: 0, radius: 0});
       setInterval(goToWaypoints, 33);
     </script>
   </head>
